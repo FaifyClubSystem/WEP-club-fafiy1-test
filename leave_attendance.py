@@ -440,10 +440,19 @@ ATTENDANCE_BODY_HTML = '''
     {% if history %}
     <div class="table-responsive">
         <table class="table table-bordered table-hover align-middle fs-7">
-            <thead class="table-success text-dark"><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead>
+            <thead class="table-success text-dark"><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th>{% if is_admin %}<th>حذف</th>{% endif %}</tr></thead>
             <tbody>
             {% for h in history %}
-                <tr><td dir="ltr">{{ h.record_date }}</td><td>{{ h.check_in_time or '-' }}</td><td>{{ h.check_out_time or '-' }}</td></tr>
+                <tr>
+                    <td dir="ltr">{{ h.record_date }}</td><td>{{ h.check_in_time or '-' }}</td><td>{{ h.check_out_time or '-' }}</td>
+                    {% if is_admin %}
+                    <td>
+                        <form action="/attendance/delete/{{ h.id }}" method="post" onsubmit="return confirm('تأكيد حذف هذا السجل؟');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class='bx bx-trash'></i></button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
             {% endfor %}
             </tbody>
         </table>
@@ -458,10 +467,17 @@ ATTENDANCE_BODY_HTML = '''
     <h5 class="fw-bold mb-3" style="color:var(--fifa-green-primary);"><i class='bx bxs-group ms-1' style="color:var(--fifa-gold);"></i> حضور جميع الإدارات اليوم</h5>
     <div class="table-responsive">
         <table class="table table-bordered table-hover align-middle fs-7">
-            <thead class="table-success text-dark"><tr><th>الإدارة</th><th>الحضور</th><th>الانصراف</th></tr></thead>
+            <thead class="table-success text-dark"><tr><th>الإدارة</th><th>الحضور</th><th>الانصراف</th><th>حذف</th></tr></thead>
             <tbody>
             {% for h in admin_today %}
-                <tr><td class="fw-bold">{{ h.dept_name }}</td><td>{{ h.check_in_time or '-' }}</td><td>{{ h.check_out_time or '-' }}</td></tr>
+                <tr>
+                    <td class="fw-bold">{{ h.dept_name }}</td><td>{{ h.check_in_time or '-' }}</td><td>{{ h.check_out_time or '-' }}</td>
+                    <td>
+                        <form action="/attendance/delete/{{ h.id }}" method="post" onsubmit="return confirm('تأكيد حذف هذا السجل؟');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class='bx bx-trash'></i></button>
+                        </form>
+                    </td>
+                </tr>
             {% endfor %}
             </tbody>
         </table>
@@ -1050,6 +1066,19 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
         ''', (now_time, lat, lng, distance, existing['id']))
         conn.commit(); cursor.close(); conn.close()
         return '''<script>alert("تم تسجيل الانصراف بنجاح."); window.location.href="/attendance";</script>'''
+
+    @app.route('/attendance/delete/<int:record_id>', methods=['POST'], endpoint='attendance_delete')
+    def attendance_delete(record_id):
+        """حذف سجل حضور/انصراف - للمسؤول (الرئيس التنفيذي/مدير تقنية المعلومات) فقط،
+        يُستخدم لتنظيف سجلات تجريبية أو تصحيح أخطاء تسجيل."""
+        if 'dept_id' not in session:
+            return redirect(url_for('login'))
+        if not is_admin_user(session.get('dept_name')):
+            return '''<script>alert("عذراً، حذف سجلات الحضور متاح فقط للمسؤول."); window.location.href="/attendance";</script>'''
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute('DELETE FROM attendance_records WHERE id = %s', (record_id,))
+        conn.commit(); cursor.close(); conn.close()
+        return redirect(url_for('attendance_page'))
 
     # ============================ إعدادات الإدمن ============================
 
