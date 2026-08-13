@@ -11,6 +11,7 @@ import io
 import zipfile
 import uuid
 from supabase import create_client, Client
+from leave_attendance import init_leave_attendance
 
 app = Flask(__name__)
 # مفتاح الجلسة يُقرأ من متغير بيئة SECRET_KEY (يجب ضبطه في إعدادات الاستضافة/Render).
@@ -354,6 +355,7 @@ def init_db():
     conn.close()
 
 init_db()
+init_leave_attendance(app, get_db_connection, is_admin_user)
 
 # --- مسارات التحميل والمعاينة لكل ملفات النظام (تُقرأ الآن من Supabase Storage) ---
 
@@ -1432,6 +1434,12 @@ def register():
                 {% if current_dept['can_page_quick_upload'] == 1 or is_admin %}
                 <a href="/quick_upload" class="sidebar-link"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
                 {% endif %}
+                {% if current_dept['can_page_leave'] == 1 or is_admin %}
+                <a href="/leave" class="sidebar-link"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+                {% endif %}
+                {% if current_dept['can_page_attendance'] == 1 or is_admin %}
+                <a href="/attendance" class="sidebar-link"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
+                {% endif %}
                 <a href="/suggestions" class="sidebar-link"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات</a>
                 {% if is_admin %}
                 <a href="/admin/dashboard" class="sidebar-link" style="background-color: rgba(197, 160, 89, 0.2);"><i class='bx bxs-cog' style="color: var(--fifa-gold);"></i>لوحة التحكم الشاملة</a>
@@ -1718,6 +1726,12 @@ def suggestions():
                 {% endif %}
                 {% if current_dept['can_page_quick_upload'] == 1 or is_admin %}
                 <a href="/quick_upload" class="sidebar-link"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
+                {% endif %}
+                {% if current_dept['can_page_leave'] == 1 or is_admin %}
+                <a href="/leave" class="sidebar-link"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+                {% endif %}
+                {% if current_dept['can_page_attendance'] == 1 or is_admin %}
+                <a href="/attendance" class="sidebar-link"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
                 {% endif %}
                 {% if current_dept['can_page_suggestions'] == 1 or is_admin %}
                 <a href="/suggestions" class="sidebar-link active"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات</a>
@@ -2473,6 +2487,12 @@ DASHBOARD_HTML = '''
             {% endif %}
             {% if can_page_quick_upload == 1 or is_admin %}
             <a href="/quick_upload" class="sidebar-link {{ 'active' if current_page == 'quick_upload' else '' }}"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
+            {% endif %}
+            {% if can_page_leave == 1 or is_admin %}
+            <a href="/leave" class="sidebar-link {{ 'active' if current_page == 'leave' else '' }}"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+            {% endif %}
+            {% if can_page_attendance == 1 or is_admin %}
+            <a href="/attendance" class="sidebar-link {{ 'active' if current_page == 'attendance' else '' }}"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
             {% endif %}
             {% if can_page_suggestions == 1 or is_admin %}
             <a href="/suggestions" class="sidebar-link {{ 'active' if current_page == 'suggestions' else '' }}"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات
@@ -3672,6 +3692,8 @@ def dashboard():
                                   can_delete=current_dept['can_delete'],
                                   can_add_user=current_dept['can_add_user'],
                                   can_page_quick_upload=current_dept['can_page_quick_upload'],
+                                  can_page_leave=current_dept['can_page_leave'],
+                                  can_page_attendance=current_dept['can_page_attendance'],
                                   can_page_inbox=current_dept['can_page_inbox'],
                                   can_page_outbox=current_dept['can_page_outbox'],
                                   can_page_achievements=current_dept['can_page_achievements'],
@@ -3732,6 +3754,8 @@ def outbox():
                                   can_delete=current_dept['can_delete'],
                                   can_add_user=current_dept['can_add_user'],
                                   can_page_quick_upload=current_dept['can_page_quick_upload'],
+                                  can_page_leave=current_dept['can_page_leave'],
+                                  can_page_attendance=current_dept['can_page_attendance'],
                                   can_page_inbox=current_dept['can_page_inbox'],
                                   can_page_outbox=current_dept['can_page_outbox'],
                                   can_page_achievements=current_dept['can_page_achievements'],
@@ -3990,6 +4014,8 @@ def archive():
                                   can_delete=current_dept['can_delete'],
                                   can_add_user=current_dept['can_add_user'],
                                   can_page_quick_upload=current_dept['can_page_quick_upload'],
+                                  can_page_leave=current_dept['can_page_leave'],
+                                  can_page_attendance=current_dept['can_page_attendance'],
                                   can_page_inbox=current_dept['can_page_inbox'],
                                   can_page_outbox=current_dept['can_page_outbox'],
                                   can_page_achievements=current_dept['can_page_achievements'],
@@ -4191,6 +4217,12 @@ def quick_upload():
                 {% endif %}
                 {% if current_dept['can_page_quick_upload'] == 1 or is_admin %}
                 <a href="/quick_upload" class="sidebar-link active"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
+                {% endif %}
+                {% if current_dept['can_page_leave'] == 1 or is_admin %}
+                <a href="/leave" class="sidebar-link"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+                {% endif %}
+                {% if current_dept['can_page_attendance'] == 1 or is_admin %}
+                <a href="/attendance" class="sidebar-link"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
                 {% endif %}
                 {% if current_dept['can_page_suggestions'] == 1 or is_admin %}
                 <a href="/suggestions" class="sidebar-link"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات</a>
@@ -4496,6 +4528,12 @@ def monthly_achievements():
                 {% endif %}
                 {% if current_dept['can_page_quick_upload'] == 1 or is_admin %}
                 <a href="/quick_upload" class="sidebar-link"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
+                {% endif %}
+                {% if current_dept['can_page_leave'] == 1 or is_admin %}
+                <a href="/leave" class="sidebar-link"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+                {% endif %}
+                {% if current_dept['can_page_attendance'] == 1 or is_admin %}
+                <a href="/attendance" class="sidebar-link"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
                 {% endif %}
                 {% if current_dept['can_page_suggestions'] == 1 or is_admin %}
                 <a href="/suggestions" class="sidebar-link"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات</a>
@@ -5278,6 +5316,8 @@ def admin_dashboard():
                 <a href="/monthly_achievements" class="sidebar-link"><i class='bx bxs-trophy'></i>إنجازات الشهر</a>
                 <a href="/archive" class="sidebar-link"><i class='bx bxs-file-archive'></i>أرشيف الإدارة</a>
                 <a href="/quick_upload" class="sidebar-link"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
+                <a href="/leave" class="sidebar-link"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+                <a href="/attendance" class="sidebar-link"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
                 <a href="/suggestions" class="sidebar-link"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات</a>
                 <a href="/admin/dashboard" class="sidebar-link active" style="background-color: rgba(197, 160, 89, 0.2);"><i class='bx bxs-cog' style="color: var(--fifa-gold);"></i>لوحة التحكم الشاملة</a>
                 <a href="/admin/permissions" class="sidebar-link"><i class='bx bxs-shield'></i>إدارة الصلاحيات</a>
@@ -5907,6 +5947,12 @@ def admin_permissions():
                 {% endif %}
                 {% if current_dept['can_page_quick_upload'] == 1 %}
                 <a href="/quick_upload" class="sidebar-link"><i class='bx bx-cloud-upload' style="color: var(--fifa-gold);"></i>رفع وتوثيق فوري</a>
+                {% endif %}
+                {% if current_dept['can_page_leave'] == 1 %}
+                <a href="/leave" class="sidebar-link"><i class='bx bx-calendar-minus' style="color: var(--fifa-gold);"></i>طلبات الإجازات</a>
+                {% endif %}
+                {% if current_dept['can_page_attendance'] == 1 %}
+                <a href="/attendance" class="sidebar-link"><i class='bx bx-map-pin' style="color: var(--fifa-gold);"></i>الحضور والانصراف</a>
                 {% endif %}
                 <a href="/suggestions" class="sidebar-link"><i class='bx bxs-message-square-detail'></i>مشاكل واقتراحات</a>
                 <a href="/admin/dashboard" class="sidebar-link" style="background-color: rgba(197, 160, 89, 0.2);"><i class='bx bxs-cog' style="color: var(--fifa-gold);"></i>لوحة التحكم الشاملة</a>
