@@ -25,6 +25,14 @@ NEON_DATABASE_URL = os.environ.get('DATABASE_URL')
 if not NEON_DATABASE_URL:
     raise RuntimeError("متغير البيئة DATABASE_URL غير مضبوط. الرجاء ضبطه في إعدادات الاستضافة قبل تشغيل التطبيق.")
 
+# --- عزل بيئة الاختبار (اختياري): متغير بيئة DB_SCHEMA يتيح تشغيل نسخة اختبار
+# تستخدم نفس مشروع Supabase لكن بجداول منفصلة تماماً داخل schema مستقل، بدون أي
+# تأثير على بيانات الإنتاج الحقيقية. اتركه بدون ضبط في سيرفر الإنتاج (يبقى 'public'
+# كما هو الوضع الحالي تماماً)، واضبطه فقط في سيرفر الاختبار، مثلاً: DB_SCHEMA=faify_test
+DB_SCHEMA = (os.environ.get('DB_SCHEMA') or 'public').strip() or 'public'
+if not (DB_SCHEMA[:1].isalpha() or DB_SCHEMA[:1] == '_') or not all(_c.isalnum() or _c == '_' for _c in DB_SCHEMA):
+    raise RuntimeError("قيمة DB_SCHEMA غير صالحة - يجب أن تبدأ بحرف وتحتوي فقط حروف/أرقام/underscore.")
+
 # --- إعدادات تخزين الملفات الحقيقية على Supabase Storage ---
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 if not SUPABASE_URL:
@@ -164,6 +172,13 @@ def is_receiver_allowed(cursor, sender_id, receiver_id):
 def get_db_connection():
     conn = psycopg2.connect(NEON_DATABASE_URL, sslmode='require')
     conn.cursor_factory = psycopg2.extras.RealDictCursor
+    if DB_SCHEMA != 'public':
+        # بيئة اختبار معزولة: ننشئ الـ schema أول مرة إن لم يكن موجوداً، ونوجّه كل
+        # الاستعلامات (بما فيها إنشاء الجداول عبر init_db) إليه حصراً بدل public
+        with conn.cursor() as _schema_cursor:
+            _schema_cursor.execute('CREATE SCHEMA IF NOT EXISTS "' + DB_SCHEMA + '"')
+            _schema_cursor.execute('SET search_path TO "' + DB_SCHEMA + '", public')
+        conn.commit()
     return conn
 
 def peek_next_letter_number(cursor):
@@ -285,7 +300,7 @@ def init_db():
     if cursor.fetchone()['count'] == 0:
         cursor.execute('INSERT INTO system_settings (next_letter_number) VALUES (1)')
     
-    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='departments'")
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='departments' AND table_schema = current_schema()")
     dept_columns = [col['column_name'] for col in cursor.fetchall()]
     if 'can_view_all_archive' not in dept_columns:
         cursor.execute('ALTER TABLE departments ADD COLUMN can_view_all_archive INTEGER DEFAULT 1')
@@ -323,12 +338,12 @@ def init_db():
     ''')
 
     # --- ترحيل جداول الملفات لدعم مسار Supabase Storage (file_path) ---
-    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='course_certificates'")
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='course_certificates' AND table_schema = current_schema()")
     cert_columns = [col['column_name'] for col in cursor.fetchall()]
     if 'file_path' not in cert_columns:
         cursor.execute('ALTER TABLE course_certificates ADD COLUMN file_path TEXT')
 
-    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='letters'")
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='letters' AND table_schema = current_schema()")
     letters_columns = [col['column_name'] for col in cursor.fetchall()]
     if 'is_read' not in letters_columns:
         cursor.execute('ALTER TABLE letters ADD COLUMN is_read INTEGER DEFAULT 0')
