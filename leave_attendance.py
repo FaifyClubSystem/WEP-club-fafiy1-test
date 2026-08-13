@@ -436,14 +436,22 @@ ATTENDANCE_BODY_HTML = '''
 </div>
 
 <div class="modern-card">
-    <h5 class="fw-bold mb-3" style="color:var(--fifa-green-primary);"><i class='bx bxs-calendar ms-1' style="color:var(--fifa-gold);"></i> سجل آخر 30 يوم</h5>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h5 class="fw-bold mb-0" style="color:var(--fifa-green-primary);"><i class='bx bxs-calendar ms-1' style="color:var(--fifa-gold);"></i> سجل آخر 30 يوم{% if is_admin %} (كل الإدارات){% endif %}</h5>
+        {% if is_admin and history %}
+        <form action="/attendance/delete_all" method="post" onsubmit="return confirm('تأكيد حذف كل سجلات الحضور والانصراف لكل الإدارات؟ لا يمكن التراجع عن هذا الإجراء.');">
+            <button type="submit" class="btn btn-sm btn-danger"><i class='bx bx-trash'></i> حذف الكل</button>
+        </form>
+        {% endif %}
+    </div>
     {% if history %}
     <div class="table-responsive">
         <table class="table table-bordered table-hover align-middle fs-7">
-            <thead class="table-success text-dark"><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th>{% if is_admin %}<th>حذف</th>{% endif %}</tr></thead>
+            <thead class="table-success text-dark"><tr>{% if is_admin %}<th>الإدارة</th>{% endif %}<th>التاريخ</th><th>الحضور</th><th>الانصراف</th>{% if is_admin %}<th>حذف</th>{% endif %}</tr></thead>
             <tbody>
             {% for h in history %}
                 <tr>
+                    {% if is_admin %}<td class="fw-bold">{{ h.dept_name }}</td>{% endif %}
                     <td dir="ltr">{{ h.record_date }}</td><td>{{ h.check_in_time or '-' }}</td><td>{{ h.check_out_time or '-' }}</td>
                     {% if is_admin %}
                     <td>
@@ -949,9 +957,20 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
         cursor.execute('SELECT * FROM attendance_records WHERE dept_id = %s AND record_date = %s',
                         (session['dept_id'], today_s))
         today_record = cursor.fetchone()
-        cursor.execute('SELECT * FROM attendance_records WHERE dept_id = %s ORDER BY record_date DESC LIMIT 30',
-                        (session['dept_id'],))
-        history = cursor.fetchall()
+        if is_admin:
+            # المسؤول يشوف سجل كل الإدارات لآخر 30 يوم (مو بس سجله الشخصي)
+            thirty_days_ago_s = (_riyadh_now().date() - timedelta(days=30)).isoformat()
+            cursor.execute('''
+                SELECT ar.*, d.name as dept_name FROM attendance_records ar
+                JOIN departments d ON ar.dept_id = d.id
+                WHERE ar.record_date >= %s
+                ORDER BY ar.record_date DESC, d.name
+            ''', (thirty_days_ago_s,))
+            history = cursor.fetchall()
+        else:
+            cursor.execute('SELECT * FROM attendance_records WHERE dept_id = %s ORDER BY record_date DESC LIMIT 30',
+                            (session['dept_id'],))
+            history = cursor.fetchall()
 
         admin_today = []
         if is_admin:
@@ -1077,6 +1096,18 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             return '''<script>alert("عذراً، حذف سجلات الحضور متاح فقط للمسؤول."); window.location.href="/attendance";</script>'''
         conn = get_db_connection(); cursor = conn.cursor()
         cursor.execute('DELETE FROM attendance_records WHERE id = %s', (record_id,))
+        conn.commit(); cursor.close(); conn.close()
+        return redirect(url_for('attendance_page'))
+
+    @app.route('/attendance/delete_all', methods=['POST'], endpoint='attendance_delete_all')
+    def attendance_delete_all():
+        """حذف كل سجلات الحضور والانصراف لكل الإدارات دفعة واحدة - للمسؤول فقط."""
+        if 'dept_id' not in session:
+            return redirect(url_for('login'))
+        if not is_admin_user(session.get('dept_name')):
+            return '''<script>alert("عذراً، حذف كل السجلات متاح فقط للمسؤول."); window.location.href="/attendance";</script>'''
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute('DELETE FROM attendance_records')
         conn.commit(); cursor.close(); conn.close()
         return redirect(url_for('attendance_page'))
 
