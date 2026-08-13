@@ -30,7 +30,7 @@ if not NEON_DATABASE_URL:
 # تأثير على بيانات الإنتاج الحقيقية. اتركه بدون ضبط في سيرفر الإنتاج (يبقى 'public'
 # كما هو الوضع الحالي تماماً)، واضبطه فقط في سيرفر الاختبار، مثلاً: DB_SCHEMA=faify_test
 DB_SCHEMA = (os.environ.get('DB_SCHEMA') or 'public').strip() or 'public'
-if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', DB_SCHEMA):
+if not (DB_SCHEMA[:1].isalpha() or DB_SCHEMA[:1] == '_') or not all(_c.isalnum() or _c == '_' for _c in DB_SCHEMA):
     raise RuntimeError("قيمة DB_SCHEMA غير صالحة - يجب أن تبدأ بحرف وتحتوي فقط حروف/أرقام/underscore.")
 
 # --- إعدادات تخزين الملفات الحقيقية على Supabase Storage ---
