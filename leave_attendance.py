@@ -323,6 +323,78 @@ LEAVE_BODY_HTML = '''
 </div>
 {% endif %}
 
+{% if is_admin and cancel_requests_all %}
+<div class="modern-card">
+    <h5 class="fw-bold mb-3" style="color:var(--fifa-green-primary);"><i class='bx bxs-x-square ms-1' style="color:var(--fifa-gold);"></i> طلبات إلغاء بانتظار الموافقة (كل الإدارات)</h5>
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle fs-7">
+            <thead class="table-success text-dark">
+                <tr><th>الإدارة</th><th>النوع</th><th>من</th><th>إلى</th><th>عدد الأيام</th><th>الحالة السابقة</th><th>إجراء</th></tr>
+            </thead>
+            <tbody>
+                {% for r in cancel_requests_all %}
+                <tr>
+                    <td class="fw-bold">{{ r.dept_name }}</td>
+                    <td>{{ r.leave_type }}</td>
+                    <td dir="ltr">{{ r.start_date }}</td>
+                    <td dir="ltr">{{ r.end_date }}</td>
+                    <td class="text-center">{{ r.days_count }}</td>
+                    <td>{{ r.pre_cancel_status or '-' }}</td>
+                    <td class="d-flex gap-1 flex-wrap">
+                        <a href="/leave/cancel_approve/{{ r.id }}" class="btn btn-sm btn-danger py-1 px-2 fs-8" onclick="return confirm('تأكيد إلغاء هذه الإجازة؟ سيتم استرجاع الأيام غير المستخدمة فقط إن وُجدت.');">تأكيد الإلغاء</a>
+                        <a href="/leave/cancel_reject/{{ r.id }}" class="btn btn-sm btn-outline-secondary py-1 px-2 fs-8" onclick="return confirm('رفض طلب الإلغاء وإرجاع الطلب لحالته السابقة؟');">رفض الإلغاء</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if is_admin and all_requests %}
+<div class="modern-card">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h5 class="fw-bold mb-0" style="color:var(--fifa-green-primary);"><i class='bx bxs-list-check ms-1' style="color:var(--fifa-gold);"></i> كل طلبات الإجازات (كل الإدارات)</h5>
+        <form action="/leave/delete_all" method="post" onsubmit="return confirm('تأكيد حذف كل طلبات الإجازات لكل الإدارات؟ هذا يحذف السجلات فقط ولا يعيد حساب أي رصيد. لا يمكن التراجع.');">
+            <button type="submit" class="btn btn-sm btn-danger"><i class='bx bx-trash'></i> حذف الكل</button>
+        </form>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle fs-7">
+            <thead class="table-success text-dark">
+                <tr><th>الإدارة</th><th>النوع</th><th>من</th><th>إلى</th><th>الأيام</th><th>الحالة</th><th>ملاحظات</th><th>حذف</th></tr>
+            </thead>
+            <tbody>
+                {% for r in all_requests %}
+                <tr>
+                    <td class="fw-bold">{{ r.dept_name }}</td>
+                    <td>{{ r.leave_type }}</td>
+                    <td dir="ltr">{{ r.start_date }}</td>
+                    <td dir="ltr">{{ r.end_date }}</td>
+                    <td class="text-center">{{ r.days_count }}</td>
+                    <td>
+                        {% if r.status == 'قيد المراجعة' %}<span class="status-badge st-pending">قيد المراجعة</span>
+                        {% elif r.status == 'موافق عليها' %}<span class="status-badge st-approved">موافق عليها</span>
+                        {% elif r.status == 'مرفوضة' %}<span class="status-badge st-rejected">مرفوضة</span>
+                        {% elif r.status == 'طلب إلغاء' %}<span class="status-badge st-pending">بانتظار موافقة الإلغاء</span>
+                        {% elif r.status == 'ملغاة' %}<span class="status-badge st-cancelled">ملغاة{% if r.refunded_days %} (تم استرجاع {{ r.refunded_days }} يوم){% endif %}</span>
+                        {% else %}{{ r.status }}{% endif %}
+                    </td>
+                    <td class="fs-8 text-muted">{{ r.reason or '-' }}</td>
+                    <td>
+                        <form action="/leave/delete/{{ r.id }}" method="post" onsubmit="return confirm('تأكيد حذف هذا الطلب؟');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class='bx bx-trash'></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="modern-card">
     <h5 class="fw-bold mb-3" style="color:var(--fifa-green-primary);"><i class='bx bxs-list-check ms-1' style="color:var(--fifa-gold);"></i> طلباتي</h5>
     {% if own_requests %}
@@ -342,6 +414,7 @@ LEAVE_BODY_HTML = '''
                         {% if r.status == 'قيد المراجعة' %}<span class="status-badge st-pending">قيد المراجعة</span>
                         {% elif r.status == 'موافق عليها' %}<span class="status-badge st-approved">موافق عليها</span>
                         {% elif r.status == 'مرفوضة' %}<span class="status-badge st-rejected">مرفوضة</span>
+                        {% elif r.status == 'طلب إلغاء' %}<span class="status-badge st-pending">بانتظار موافقة الإلغاء</span>
                         {% elif r.status == 'ملغاة' %}<span class="status-badge st-cancelled">ملغاة{% if r.refunded_days %} (تم استرجاع {{ r.refunded_days }} يوم){% endif %}</span>
                         {% else %}{{ r.status }}{% endif %}
                     </td>
@@ -349,6 +422,7 @@ LEAVE_BODY_HTML = '''
                     <td>
                         {% if r.status in ['قيد المراجعة', 'موافق عليها'] %}
                         <a href="/leave/cancel/{{ r.id }}" class="btn btn-sm btn-outline-danger py-1 px-2 fs-8" onclick="return confirm('هل أنت متأكد من إلغاء هذه الإجازة؟ سيتم استرجاع الأيام غير المستخدمة فقط.');">إلغاء</a>
+                        {% elif r.status == 'طلب إلغاء' %}<span class="text-muted fs-8">بانتظار موافقة الإدارة</span>
                         {% else %}—{% endif %}
                     </td>
                 </tr>
@@ -681,9 +755,13 @@ def _init_tables(get_db_connection):
             decided_by TEXT,
             cancelled_at TEXT,
             refunded_days INTEGER DEFAULT 0,
-            balance_deducted INTEGER DEFAULT 0
+            balance_deducted INTEGER DEFAULT 0,
+            pre_cancel_status TEXT
         )
     ''')
+    # لجدول موجود مسبقاً (تم إنشاؤه قبل إضافة نظام "طلب الإلغاء"): نضيف العمود
+    # الناقص بأمان دون الاعتماد على فحص information_schema (لتفادي مشاكل تعدد الـ schema).
+    cursor.execute('ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS pre_cancel_status TEXT')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS attendance_settings (
@@ -793,6 +871,8 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
         own_requests = cursor.fetchall()
 
         pending_all = []
+        cancel_requests_all = []
+        all_requests = []
         if is_admin:
             cursor.execute('''
                 SELECT lr.*, d.name as dept_name FROM leave_requests lr
@@ -801,10 +881,25 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             ''')
             pending_all = cursor.fetchall()
 
+            cursor.execute('''
+                SELECT lr.*, d.name as dept_name FROM leave_requests lr
+                JOIN departments d ON lr.dept_id = d.id
+                WHERE lr.status = 'طلب إلغاء' ORDER BY lr.id ASC
+            ''')
+            cancel_requests_all = cursor.fetchall()
+
+            cursor.execute('''
+                SELECT lr.*, d.name as dept_name FROM leave_requests lr
+                JOIN departments d ON lr.dept_id = d.id
+                ORDER BY lr.id DESC
+            ''')
+            all_requests = cursor.fetchall()
+
         cursor.close(); conn.close()
         body = render_template_string(
             LEAVE_BODY_HTML, current_dept=current_dept, is_admin=is_admin,
-            own_requests=own_requests, pending_all=pending_all
+            own_requests=own_requests, pending_all=pending_all,
+            cancel_requests_all=cancel_requests_all, all_requests=all_requests
         )
         return _shell('طلبات الإجازات', 'leave', body, current_dept, is_admin)
 
@@ -894,6 +989,33 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
         conn.commit(); cursor.close(); conn.close()
         return '''<script>alert("تم رفض طلب الإجازة."); window.location.href="/leave";</script>'''
 
+    def _do_actual_cancel(cursor, lr, base_status):
+        """ينفذ الإلغاء الفعلي (مع حساب الاسترجاع إن لزم) بالاعتماد على base_status
+        كحالة أساس (قد تكون lr['status'] للإلغاء المباشر من الإدمن، أو
+        lr['pre_cancel_status'] عند تأكيد طلب إلغاء سبق تقديمه)."""
+        refund_days = 0
+        if base_status == 'موافق عليها':
+            today = _riyadh_now().date()
+            end_d = lr['end_date'] if isinstance(lr['end_date'], date) else _parse_date(str(lr['end_date']))
+            start_d = lr['start_date'] if isinstance(lr['start_date'], date) else _parse_date(str(lr['start_date']))
+            if today < start_d:
+                refund_days = lr['balance_deducted'] or 0
+            elif today > end_d:
+                refund_days = 0
+            else:
+                remaining = (end_d - today).days + 1  # من اليوم (شامل) حتى نهاية الإجازة
+                refund_days = min(remaining, lr['balance_deducted'] or 0)
+            if refund_days > 0:
+                cursor.execute('SELECT leave_balance FROM departments WHERE id = %s', (lr['dept_id'],))
+                d_row = cursor.fetchone()
+                current_balance = d_row['leave_balance'] if d_row and d_row.get('leave_balance') is not None else 0
+                cursor.execute('UPDATE departments SET leave_balance = %s WHERE id = %s',
+                                (current_balance + refund_days, lr['dept_id']))
+        cursor.execute('''
+            UPDATE leave_requests SET status='ملغاة', cancelled_at=%s, refunded_days=%s, pre_cancel_status=NULL WHERE id = %s
+        ''', (_riyadh_now().strftime('%Y-%m-%d %H:%M'), refund_days, lr['id']))
+        return refund_days
+
     @app.route('/leave/cancel/<int:req_id>', methods=['GET'], endpoint='leave_cancel')
     def leave_cancel(req_id):
         if 'dept_id' not in session:
@@ -912,31 +1034,77 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             cursor.close(); conn.close()
             return '''<script>alert("لا يمكن إلغاء هذا الطلب في حالته الحالية."); window.location.href="/leave";</script>'''
 
-        refund_days = 0
-        if lr['status'] == 'موافق عليها':
-            today = _riyadh_now().date()
-            end_d = lr['end_date'] if isinstance(lr['end_date'], date) else _parse_date(str(lr['end_date']))
-            start_d = lr['start_date'] if isinstance(lr['start_date'], date) else _parse_date(str(lr['start_date']))
-            if today < start_d:
-                refund_days = lr['balance_deducted'] or 0
-            elif today > end_d:
-                refund_days = 0
-            else:
-                remaining = (end_d - today).days + 1  # من اليوم (شامل) حتى نهاية الإجازة
-                refund_days = min(remaining, lr['balance_deducted'] or 0)
-            if refund_days > 0:
-                cursor.execute('SELECT leave_balance FROM departments WHERE id = %s', (lr['dept_id'],))
-                d_row = cursor.fetchone()
-                current_balance = d_row['leave_balance'] if d_row and d_row.get('leave_balance') is not None else 0
-                cursor.execute('UPDATE departments SET leave_balance = %s WHERE id = %s',
-                                (current_balance + refund_days, lr['dept_id']))
+        if is_admin:
+            # الإدمن (الرئيس التنفيذي / مدير تقنية المعلومات) يملك صلاحية الإلغاء الفوري مباشرة
+            refund_days = _do_actual_cancel(cursor, lr, lr['status'])
+            conn.commit(); cursor.close(); conn.close()
+            msg = "تم إلغاء طلب الإجازة." if refund_days == 0 else f"تم إلغاء الإجازة وإرجاع {refund_days} يوم إلى الرصيد."
+            return f'''<script>alert("{msg}"); window.location.href="/leave";</script>'''
 
+        # الموظف العادي لا يملك صلاحية الإلغاء المباشر - يُرسل طلب إلغاء فقط،
+        # وينتظر تأكيد الرئيس التنفيذي / مدير تقنية المعلومات لتنفيذه فعلياً.
         cursor.execute('''
-            UPDATE leave_requests SET status='ملغاة', cancelled_at=%s, refunded_days=%s WHERE id = %s
-        ''', (_riyadh_now().strftime('%Y-%m-%d %H:%M'), refund_days, req_id))
+            UPDATE leave_requests SET status='طلب إلغاء', pre_cancel_status=%s WHERE id = %s
+        ''', (lr['status'], req_id))
         conn.commit(); cursor.close(); conn.close()
-        msg = "تم إلغاء طلب الإجازة." if refund_days == 0 else f"تم إلغاء الإجازة وإرجاع {refund_days} يوم إلى الرصيد."
+        return '''<script>alert("تم إرسال طلب إلغاء الإجازة، بانتظار موافقة الرئيس التنفيذي / مدير تقنية المعلومات."); window.location.href="/leave";</script>'''
+
+    @app.route('/leave/cancel_approve/<int:req_id>', methods=['GET'], endpoint='leave_cancel_approve')
+    def leave_cancel_approve(req_id):
+        if 'dept_id' not in session:
+            return redirect(url_for('login'))
+        if not is_admin_user(session.get('dept_name')):
+            return '''<script>alert("هذه الصلاحية للرئيس التنفيذي / مدير تقنية المعلومات فقط."); window.location.href="/leave";</script>'''
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute('SELECT * FROM leave_requests WHERE id = %s', (req_id,))
+        lr = cursor.fetchone()
+        if not lr or lr['status'] != 'طلب إلغاء':
+            cursor.close(); conn.close()
+            return '''<script>alert("لا يوجد طلب إلغاء بانتظار الموافقة لهذا الطلب."); window.location.href="/leave";</script>'''
+        refund_days = _do_actual_cancel(cursor, lr, lr.get('pre_cancel_status') or 'قيد المراجعة')
+        conn.commit(); cursor.close(); conn.close()
+        msg = "تم تأكيد إلغاء الإجازة." if refund_days == 0 else f"تم تأكيد الإلغاء وإرجاع {refund_days} يوم إلى رصيد الإدارة."
         return f'''<script>alert("{msg}"); window.location.href="/leave";</script>'''
+
+    @app.route('/leave/cancel_reject/<int:req_id>', methods=['GET'], endpoint='leave_cancel_reject')
+    def leave_cancel_reject(req_id):
+        if 'dept_id' not in session:
+            return redirect(url_for('login'))
+        if not is_admin_user(session.get('dept_name')):
+            return '''<script>alert("هذه الصلاحية للرئيس التنفيذي / مدير تقنية المعلومات فقط."); window.location.href="/leave";</script>'''
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute('SELECT * FROM leave_requests WHERE id = %s', (req_id,))
+        lr = cursor.fetchone()
+        if not lr or lr['status'] != 'طلب إلغاء':
+            cursor.close(); conn.close()
+            return '''<script>alert("لا يوجد طلب إلغاء بانتظار الموافقة لهذا الطلب."); window.location.href="/leave";</script>'''
+        cursor.execute('''
+            UPDATE leave_requests SET status=%s, pre_cancel_status=NULL WHERE id = %s
+        ''', (lr.get('pre_cancel_status') or 'قيد المراجعة', req_id))
+        conn.commit(); cursor.close(); conn.close()
+        return '''<script>alert("تم رفض طلب الإلغاء، رجع الطلب لحالته السابقة."); window.location.href="/leave";</script>'''
+
+    @app.route('/leave/delete/<int:req_id>', methods=['POST'], endpoint='leave_delete')
+    def leave_delete(req_id):
+        if 'dept_id' not in session:
+            return redirect(url_for('login'))
+        if not is_admin_user(session.get('dept_name')):
+            return '''<script>alert("عذراً، حذف طلبات الإجازات متاح فقط للمسؤول."); window.location.href="/leave";</script>'''
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute('DELETE FROM leave_requests WHERE id = %s', (req_id,))
+        conn.commit(); cursor.close(); conn.close()
+        return redirect(url_for('leave_page'))
+
+    @app.route('/leave/delete_all', methods=['POST'], endpoint='leave_delete_all')
+    def leave_delete_all():
+        if 'dept_id' not in session:
+            return redirect(url_for('login'))
+        if not is_admin_user(session.get('dept_name')):
+            return '''<script>alert("عذراً، حذف كل الطلبات متاح فقط للمسؤول."); window.location.href="/leave";</script>'''
+        conn = get_db_connection(); cursor = conn.cursor()
+        cursor.execute('DELETE FROM leave_requests')
+        conn.commit(); cursor.close(); conn.close()
+        return redirect(url_for('leave_page'))
 
     # ========================= الحضور والانصراف =========================
 
