@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إنشاء حساب إدارة - نادي فيفا</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --fifa-green: #123826; --fifa-gold: #c5a059; --fifa-bg: #f8faf9; }
+        body { font-family: 'Almarai', sans-serif; background-color: var(--fifa-bg); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
+        .register-card { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8e5; box-shadow: 0 10px 30px rgba(18, 56, 38, 0.08); width: 100%; max-width: 450px; padding: 2.5rem; position: relative; overflow: hidden; }
+        .register-card::before { content: ''; position: absolute; top: 0; right: 0; left: 0; height: 5px; background: linear-gradient(90deg, var(--fifa-gold), var(--fifa-green)); }
+        .logo-img { height: 65px; width: auto; object-fit: contain; margin-bottom: 0.8rem; }
+        .form-control { border-radius: 8px; padding: 0.75rem 1rem; border-color: #dbe3df; }
+        .btn-fifa-gold { background-color: var(--fifa-gold); color: #ffffff; border-radius: 8px; padding: 0.75rem; font-weight: 700; border: none; width: 100%; }
+        .btn-fifa-gold:hover { background-color: #b08d46; color: #ffffff; }
+    </style>
+</head>
+<body>
+    <div class="register-card text-center">
+        <img src="{{ url_for('static', filename='fifa_logo.png') }}" alt="شعار نادي فيفا" class="logo-img" onerror="this.onerror=null; this.src='https://faifafc.sa/wp-content/uploads/2021/08/logo.png';">
+        <h5 class="fw-bold mb-1" style="color: var(--fifa-green);">تسجيل إدارة/قسم جديد</h5>
+        <p class="text-muted fs-7 mb-4">إنشاء حساب إداري متصل بنظام أرشفة النادي</p>
+        <form action="/register" method="post">
+            <div class="mb-3 text-start">
+                <label class="form-label fw-bold fs-7" style="color: var(--fifa-green);">اسم الإدارة / القسم</label>
+                <input type="text" name="dept_name" class="form-control" placeholder="مثال: إدارة الإعلام والتسويق" required>
+            </div>
+            <div class="mb-3 text-start">
+                <label class="form-label fw-bold fs-7" style="color: var(--fifa-green);">اسم المستخدم (للدخول)</label>
+                <input type="text" name="username" class="form-control" placeholder="مثال: media_dept" required>
+            </div>
+            <div class="mb-4 text-start">
+                <label class="form-label fw-bold fs-7" style="color: var(--fifa-green);">كلمة المرور</label>
+                <input type="password" name="password" class="form-control" placeholder="أدخل كلمة مرور قوية" required>
+            </div>
+            <button type="submit" class="btn btn-fifa-gold mb-3">تسجيل الحساب</button>
+        </form>
+        <div class="border-top pt-3 mt-2">
+            <a href="/" class="text-muted text-decoration-none fs-7"><i class='bx bx-right-arrow-alt ms-1'></i>العودة لصفحة تسجيل الدخول</a>
+        </div>
+    </div>
+</body>
+</html>
