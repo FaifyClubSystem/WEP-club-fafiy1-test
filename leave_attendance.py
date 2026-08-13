@@ -40,8 +40,24 @@
 
 import math
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
+from datetime import timezone, timedelta
 
 from flask import request, redirect, url_for, session, render_template_string
+
+# التوقيت المحلي المعتمد لكل حسابات الحضور والانصراف والإجازات (توقيت السعودية، بدون توقيت صيفي)
+try:
+    RIYADH_TZ = ZoneInfo("Asia/Riyadh")
+except Exception:
+    # بعض بيئات الاستضافة المصغّرة لا تحتوي قاعدة بيانات IANA للمناطق الزمنية،
+    # فنستخدم إزاحة ثابتة UTC+3 كبديل احتياطي مضمون (السعودية بدون توقيت صيفي أصلاً)
+    RIYADH_TZ = timezone(timedelta(hours=3))
+
+def _now_riyadh():
+    """الوقت الحالي بتوقيت الرياض - يُستخدم بدلاً من datetime.now() في كل الملف
+    لأن السيرفر (Render) يشتغل بتوقيت UTC، وبدون هذا التحويل تصير كل مقارنات
+    ومقاسات الوقت (نافذة الحضور/الانصراف، تاريخ اليوم) خاطئة بفارق 3 ساعات كاملة."""
+    return datetime.now(RIYADH_TZ)
 
 # ---------------------------------------------------------------------------
 # أسماء/أنماط أدوار "تقنية المعلومات" فقط (بدون الرئيس التنفيذي) - تُستخدم فقط
@@ -80,7 +96,7 @@ def _parse_date(s):
 
 
 def _now_hm():
-    return datetime.now().strftime('%H:%M')
+    return _now_riyadh().strftime('%H:%M')
 
 
 def _within_window(now_hm, start_hm, end_hm):
@@ -674,7 +690,7 @@ def _init_tables(get_db_connection):
             INSERT INTO attendance_settings
                 (target_lat, target_lng, radius_meters, location_label, checkin_start, checkin_end, checkout_start, checkout_end, updated_at)
             VALUES (NULL, NULL, 200, '', '07:00', '09:00', '14:00', '16:00', %s)
-        ''', (datetime.now().strftime('%Y-%m-%d %H:%M'),))
+        ''', (_now_riyadh().strftime('%Y-%m-%d %H:%M'),))
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS attendance_records (
@@ -814,7 +830,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
         cursor.execute('''
             INSERT INTO leave_requests (dept_id, leave_type, start_date, end_date, days_count, reason, status, requested_at)
             VALUES (%s, %s, %s, %s, %s, %s, 'قيد المراجعة', %s)
-        ''', (dept_id, leave_type, start_date_s, end_date_s, days_count, reason, datetime.now().strftime('%Y-%m-%d %H:%M')))
+        ''', (dept_id, leave_type, start_date_s, end_date_s, days_count, reason, _now_riyadh().strftime('%Y-%m-%d %H:%M')))
         conn.commit(); cursor.close(); conn.close()
         return '''<script>alert("تم إرسال طلب الإجازة بنجاح، بانتظار موافقة الرئيس التنفيذي / مدير تقنية المعلومات."); window.location.href="/leave";</script>'''
 
@@ -841,7 +857,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
         cursor.execute('''
             UPDATE leave_requests SET status='موافق عليها', decided_at=%s, decided_by=%s, balance_deducted=%s
             WHERE id = %s
-        ''', (datetime.now().strftime('%Y-%m-%d %H:%M'), session.get('dept_name'), lr['days_count'], req_id))
+        ''', (_now_riyadh().strftime('%Y-%m-%d %H:%M'), session.get('dept_name'), lr['days_count'], req_id))
         conn.commit(); cursor.close(); conn.close()
         return '''<script>alert("تمت الموافقة على الإجازة وخصم الرصيد بنجاح."); window.location.href="/leave";</script>'''
 
@@ -859,7 +875,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             return '''<script>alert("هذا الطلب لم يعد قيد المراجعة."); window.location.href="/leave";</script>'''
         cursor.execute('''
             UPDATE leave_requests SET status='مرفوضة', decided_at=%s, decided_by=%s WHERE id = %s
-        ''', (datetime.now().strftime('%Y-%m-%d %H:%M'), session.get('dept_name'), req_id))
+        ''', (_now_riyadh().strftime('%Y-%m-%d %H:%M'), session.get('dept_name'), req_id))
         conn.commit(); cursor.close(); conn.close()
         return '''<script>alert("تم رفض طلب الإجازة."); window.location.href="/leave";</script>'''
 
@@ -883,7 +899,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
 
         refund_days = 0
         if lr['status'] == 'موافق عليها':
-            today = date.today()
+            today = _now_riyadh().date()
             end_d = lr['end_date'] if isinstance(lr['end_date'], date) else _parse_date(str(lr['end_date']))
             start_d = lr['start_date'] if isinstance(lr['start_date'], date) else _parse_date(str(lr['start_date']))
             if today < start_d:
@@ -902,7 +918,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
 
         cursor.execute('''
             UPDATE leave_requests SET status='ملغاة', cancelled_at=%s, refunded_days=%s WHERE id = %s
-        ''', (datetime.now().strftime('%Y-%m-%d %H:%M'), refund_days, req_id))
+        ''', (_now_riyadh().strftime('%Y-%m-%d %H:%M'), refund_days, req_id))
         conn.commit(); cursor.close(); conn.close()
         msg = "تم إلغاء طلب الإجازة." if refund_days == 0 else f"تم إلغاء الإجازة وإرجاع {refund_days} يوم إلى الرصيد."
         return f'''<script>alert("{msg}"); window.location.href="/leave";</script>'''
@@ -922,7 +938,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             return '''<script>alert("عذراً، لا تملك صلاحية الوصول لصفحة الحضور والانصراف."); window.location.href="/dashboard";</script>'''
 
         settings = _get_settings(cursor)
-        today_s = date.today().isoformat()
+        today_s = _now_riyadh().date().isoformat()
         cursor.execute('SELECT * FROM attendance_records WHERE dept_id = %s AND record_date = %s',
                         (session['dept_id'], today_s))
         today_record = cursor.fetchone()
@@ -975,7 +991,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             cursor.close(); conn.close()
             return f'''<script>alert("أنت خارج نطاق موقع الدوام المسموح (المسافة الحالية {int(distance)} متر)."); window.location.href="/attendance";</script>'''
 
-        today_s = date.today().isoformat()
+        today_s = _now_riyadh().date().isoformat()
         cursor.execute('SELECT * FROM attendance_records WHERE dept_id = %s AND record_date = %s',
                         (session['dept_id'], today_s))
         existing = cursor.fetchone()
@@ -983,7 +999,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             cursor.close(); conn.close()
             return '''<script>alert("تم تسجيل حضورك مسبقاً اليوم."); window.location.href="/attendance";</script>'''
 
-        now_time = datetime.now().strftime('%H:%M:%S')
+        now_time = _now_riyadh().strftime('%H:%M:%S')
         if existing:
             cursor.execute('''
                 UPDATE attendance_records SET check_in_time=%s, check_in_lat=%s, check_in_lng=%s, check_in_distance_m=%s, check_in_on_time=1
@@ -1025,7 +1041,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             cursor.close(); conn.close()
             return f'''<script>alert("أنت خارج نطاق موقع الدوام المسموح (المسافة الحالية {int(distance)} متر)."); window.location.href="/attendance";</script>'''
 
-        today_s = date.today().isoformat()
+        today_s = _now_riyadh().date().isoformat()
         cursor.execute('SELECT * FROM attendance_records WHERE dept_id = %s AND record_date = %s',
                         (session['dept_id'], today_s))
         existing = cursor.fetchone()
@@ -1036,7 +1052,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
             cursor.close(); conn.close()
             return '''<script>alert("تم تسجيل انصرافك مسبقاً اليوم."); window.location.href="/attendance";</script>'''
 
-        now_time = datetime.now().strftime('%H:%M:%S')
+        now_time = _now_riyadh().strftime('%H:%M:%S')
         cursor.execute('''
             UPDATE attendance_records SET check_out_time=%s, check_out_lat=%s, check_out_lng=%s, check_out_distance_m=%s, check_out_on_time=1
             WHERE id = %s
@@ -1079,7 +1095,7 @@ def init_leave_attendance(app, get_db_connection, is_admin_user):
                         checkin_start=%s, checkin_end=%s, checkout_start=%s, checkout_end=%s, updated_at=%s
                     WHERE id = %s
                 ''', (target_lat_f, target_lng_f, radius_i, location_label, checkin_start, checkin_end,
-                      checkout_start, checkout_end, datetime.now().strftime('%Y-%m-%d %H:%M'), srow['id']))
+                      checkout_start, checkout_end, _now_riyadh().strftime('%Y-%m-%d %H:%M'), srow['id']))
                 conn.commit(); cursor.close(); conn.close()
                 return '''<script>alert("تم حفظ إعدادات الموقع وأوقات الدوام بنجاح."); window.location.href="/admin/leave_attendance_settings";</script>'''
 
