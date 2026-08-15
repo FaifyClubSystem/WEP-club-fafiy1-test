@@ -307,6 +307,8 @@ def init_db():
         cursor.execute('ALTER TABLE departments ADD COLUMN is_locked INTEGER DEFAULT 0')
     if 'can_send_all' not in dept_columns:
         cursor.execute('ALTER TABLE departments ADD COLUMN can_send_all INTEGER DEFAULT 1')
+    if 'signature_data' not in dept_columns:
+        cursor.execute('ALTER TABLE departments ADD COLUMN signature_data TEXT')
 
     # --- جدول صلاحيات الإرسال المقيّد: أي إدارة مسموح لها الإرسال لأي إدارات أخرى عند can_send_all = 0 ---
     cursor.execute('''
@@ -2786,6 +2788,15 @@ DASHBOARD_HTML = '''
             <input type="file" accept="image/*" capture="environment" id="signatureFileInput" style="display:none" onchange="handleSignatureFileSelected(event)">
             <input type="file" accept="image/*" id="signatureGalleryInput" style="display:none" onchange="handleSignatureFileSelected(event)">
             <canvas id="signatureProcessCanvas" style="display:none;"></canvas>
+            <div id="signatureSavedArea" class="d-none">
+                <p class="text-muted fs-8 mb-2">هذا توقيعك المحفوظ من آخر مرة:</p>
+                <div style="border: 1px solid #d5e2d8; border-radius: 8px; padding: 8px; background-image: linear-gradient(45deg, #e9ecef 25%, transparent 25%), linear-gradient(-45deg, #e9ecef 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e9ecef 75%), linear-gradient(-45deg, transparent 75%, #e9ecef 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0px;">
+                    <img id="signatureSavedImg" src="" style="max-width: 100%; max-height: 220px; object-fit: contain;">
+                </div>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-link text-danger" onclick="forgetSavedSignature()"><i class='bx bx-trash ms-1'></i> حذف التوقيع المحفوظ والتقاط توقيع جديد</button>
+                </div>
+            </div>
             <div id="signatureCaptureArea">
                 <p class="text-muted fs-7 mb-3">صوّر توقيعك بكاميرا الجوال أو اختر صورة له من المعرض — بنشيل خلفية الورقة تلقائياً ونبقي شكل التوقيع بس، وبعدها بتقدر تسحبه وتحطه بأي مكان في نموذج الخطاب.</p>
                 <div class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
@@ -2987,9 +2998,43 @@ DASHBOARD_HTML = '''
             syncTextareaWithPaper();
         }
 
-        // ==== التوقيع الإلكتروني (تصوير بالكاميرا + إزالة الخلفية تلقائياً + سحب وتحريك على الورقة) ====
+        // ==== التوقيع الإلكتروني (تصوير بالكاميرا + إزالة الخلفية تلقائياً + حفظ التوقيع على حساب الإدارة بالسيرفر + سحب وتحريك على الورقة) ====
         var sigOriginalImage = null;
         var sigCapturedDataUrl = null;
+        var sigSavedFetched = null; // كاش مؤقت للتوقيع المحفوظ بالسيرفر خلال نفس تحميل الصفحة
+
+        function fetchSavedSignature(callback) {
+            fetch('/api/get_signature', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    sigSavedFetched = data.signature || null;
+                    callback(sigSavedFetched);
+                })
+                .catch(function () { callback(null); });
+        }
+
+        function saveSignatureForReuse(dataUrl) {
+            var formData = new FormData();
+            formData.append('signature_data', dataUrl);
+            fetch('/api/save_signature', { method: 'POST', body: formData, credentials: 'same-origin' })
+                .then(function () { sigSavedFetched = dataUrl; })
+                .catch(function () {});
+        }
+
+        function forgetSavedSignature() {
+            fetch('/api/delete_signature', { method: 'POST', credentials: 'same-origin' }).catch(function () {});
+            sigSavedFetched = null;
+            document.getElementById('signatureSavedArea').classList.add('d-none');
+            document.getElementById('signatureCaptureArea').classList.remove('d-none');
+            document.getElementById('insertSignatureBtn').classList.add('d-none');
+            sigCapturedDataUrl = null;
+        }
+
+        function useSavedSignature() {
+            if (!sigSavedFetched) return;
+            sigCapturedDataUrl = sigSavedFetched;
+            document.getElementById('insertSignatureBtn').classList.remove('d-none');
+        }
 
         function handleSignatureFileSelected(event) {
             var file = event.target.files && event.target.files[0];
@@ -2999,6 +3044,7 @@ DASHBOARD_HTML = '''
                 var img = new Image();
                 img.onload = function () {
                     sigOriginalImage = img;
+                    document.getElementById('signatureSavedArea').classList.add('d-none');
                     document.getElementById('signatureCaptureArea').classList.add('d-none');
                     document.getElementById('signaturePreviewArea').classList.remove('d-none');
                     document.getElementById('insertSignatureBtn').classList.remove('d-none');
@@ -3063,14 +3109,26 @@ DASHBOARD_HTML = '''
         function openSignaturePad() {
             sigOriginalImage = null;
             sigCapturedDataUrl = null;
-            document.getElementById('signatureCaptureArea').classList.remove('d-none');
+            document.getElementById('signatureSavedArea').classList.add('d-none');
+            document.getElementById('signatureCaptureArea').classList.add('d-none');
             document.getElementById('signaturePreviewArea').classList.add('d-none');
             document.getElementById('insertSignatureBtn').classList.add('d-none');
             var slider = document.getElementById('signatureThresholdSlider');
             if (slider) slider.value = 170;
+
             var modalEl = document.getElementById('signaturePadModal');
             var modal = new bootstrap.Modal(modalEl);
             modal.show();
+
+            fetchSavedSignature(function (saved) {
+                if (saved) {
+                    document.getElementById('signatureSavedImg').src = saved;
+                    document.getElementById('signatureSavedArea').classList.remove('d-none');
+                    useSavedSignature();
+                } else {
+                    document.getElementById('signatureCaptureArea').classList.remove('d-none');
+                }
+            });
         }
 
         function applySignature() {
@@ -3121,6 +3179,8 @@ DASHBOARD_HTML = '''
 
             makeSignatureDraggable(wrapper);
             targetBody.appendChild(wrapper);
+
+            saveSignatureForReuse(sigCapturedDataUrl);
 
             var modalEl = document.getElementById('signaturePadModal');
             var modal = bootstrap.Modal.getInstance(modalEl);
@@ -3666,6 +3726,45 @@ def api_unread_count():
     cursor.close()
     conn.close()
     return {'count': row['count'] if row else 0}
+
+@app.route('/api/get_signature')
+def api_get_signature():
+    if 'dept_id' not in session:
+        return {'signature': None}
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT signature_data FROM departments WHERE id = %s', (session['dept_id'],))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return {'signature': row['signature_data'] if row else None}
+
+@app.route('/api/save_signature', methods=['POST'])
+def api_save_signature():
+    if 'dept_id' not in session:
+        return {'success': False}, 401
+    signature_data = request.form.get('signature_data', '')
+    if not signature_data.startswith('data:image/'):
+        return {'success': False, 'error': 'صيغة الصورة غير صالحة'}, 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE departments SET signature_data = %s WHERE id = %s', (signature_data, session['dept_id']))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {'success': True}
+
+@app.route('/api/delete_signature', methods=['POST'])
+def api_delete_signature():
+    if 'dept_id' not in session:
+        return {'success': False}, 401
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE departments SET signature_data = NULL WHERE id = %s', (session['dept_id'],))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {'success': True}
 
 @app.route('/dashboard')
 def dashboard():
