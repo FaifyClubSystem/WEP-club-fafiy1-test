@@ -11,6 +11,8 @@ import io
 import zipfile
 import uuid
 from supabase import create_client, Client
+from leave_attendance import init_leave_attendance
+
 
 app = Flask(__name__)
 # مفتاح الجلسة يُقرأ من متغير بيئة SECRET_KEY (يجب ضبطه في إعدادات الاستضافة/Render).
