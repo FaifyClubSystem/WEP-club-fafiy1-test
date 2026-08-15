@@ -32,7 +32,7 @@ if not SUPABASE_URL:
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')  # مفتاح service_role السري (وليس anon key)
 if not SUPABASE_SERVICE_KEY:
     raise RuntimeError("متغير البيئة SUPABASE_SERVICE_KEY غير مضبوط. الرجاء ضبطه في إعدادات الاستضافة قبل تشغيل التطبيق.")
-SUPABASE_BUCKET = os.environ.get('SUPABASE_BUCKET', 'archive-files-test')
+SUPABASE_BUCKET = os.environ.get('SUPABASE_BUCKET', 'archive-files')
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -2784,19 +2784,36 @@ DASHBOARD_HTML = '''
           </div>
           <div class="modal-body text-center">
             <input type="file" accept="image/*" capture="environment" id="signatureFileInput" style="display:none" onchange="handleSignatureFileSelected(event)">
+            <input type="file" accept="image/*" id="signatureGalleryInput" style="display:none" onchange="handleSignatureFileSelected(event)">
+            <canvas id="signatureProcessCanvas" style="display:none;"></canvas>
             <div id="signatureCaptureArea">
-                <p class="text-muted fs-7 mb-3">صوّر توقيعك بكاميرا الجوال أو اختر صورة له، وبعدها بتقدر تسحبه وتحطه بأي مكان في نموذج الخطاب.</p>
-                <button type="button" class="btn btn-fifa-primary fw-bold px-4" onclick="document.getElementById('signatureFileInput').click()">
-                    <i class='bx bx-camera fs-5 ms-1'></i> تصوير / اختيار صورة التوقيع
-                </button>
+                <p class="text-muted fs-7 mb-3">صوّر توقيعك بكاميرا الجوال أو اختر صورة له من المعرض — بنشيل خلفية الورقة تلقائياً ونبقي شكل التوقيع بس، وبعدها بتقدر تسحبه وتحطه بأي مكان في نموذج الخطاب.</p>
+                <div class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
+                    <button type="button" class="btn btn-fifa-primary fw-bold px-4" onclick="document.getElementById('signatureFileInput').click()">
+                        <i class='bx bx-camera fs-5 ms-1'></i> تصوير بالكاميرا
+                    </button>
+                    <button type="button" class="btn btn-outline-dark fw-bold px-4" onclick="document.getElementById('signatureGalleryInput').click()">
+                        <i class='bx bx-images fs-5 ms-1'></i> اختيار من المعرض
+                    </button>
+                </div>
             </div>
             <div id="signaturePreviewArea" class="d-none">
-                <div style="border: 1px solid #d5e2d8; border-radius: 8px; padding: 8px; background: #fff;">
+                <p class="text-muted fs-8 mb-2">هذي معاينة التوقيع بعد إزالة الخلفية (المربعات الرمادية تعني شفافية):</p>
+                <div style="border: 1px solid #d5e2d8; border-radius: 8px; padding: 8px; background-image: linear-gradient(45deg, #e9ecef 25%, transparent 25%), linear-gradient(-45deg, #e9ecef 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e9ecef 75%), linear-gradient(-45deg, transparent 75%, #e9ecef 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0px;">
                     <img id="signaturePreviewImg" src="" style="max-width: 100%; max-height: 220px; object-fit: contain;">
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.getElementById('signatureFileInput').click()">
-                    <i class='bx bx-refresh ms-1'></i> إعادة الالتقاط
-                </button>
+                <div class="mt-3 text-start">
+                    <label class="form-label fw-bold fs-8 mb-1">دقة إزالة الخلفية (لو لسه فيه بقايا خلفية أو التوقيع صار خفيف، حرّك المؤشر):</label>
+                    <input type="range" class="form-range" id="signatureThresholdSlider" min="60" max="240" value="170" oninput="onSignatureThresholdChange(this.value)">
+                </div>
+                <div class="d-flex flex-column flex-sm-row gap-2 justify-content-center mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('signatureFileInput').click()">
+                        <i class='bx bx-camera ms-1'></i> إعادة التصوير
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('signatureGalleryInput').click()">
+                        <i class='bx bx-images ms-1'></i> اختيار صورة أخرى من المعرض
+                    </button>
+                </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -2970,7 +2987,8 @@ DASHBOARD_HTML = '''
             syncTextareaWithPaper();
         }
 
-        // ==== التوقيع الإلكتروني (تصوير بالكاميرا + سحب وتحريك على الورقة) ====
+        // ==== التوقيع الإلكتروني (تصوير بالكاميرا + إزالة الخلفية تلقائياً + سحب وتحريك على الورقة) ====
+        var sigOriginalImage = null;
         var sigCapturedDataUrl = null;
 
         function handleSignatureFileSelected(event) {
@@ -2978,21 +2996,78 @@ DASHBOARD_HTML = '''
             if (!file) return;
             var reader = new FileReader();
             reader.onload = function (e) {
-                sigCapturedDataUrl = e.target.result;
-                document.getElementById('signaturePreviewImg').src = sigCapturedDataUrl;
-                document.getElementById('signatureCaptureArea').classList.add('d-none');
-                document.getElementById('signaturePreviewArea').classList.remove('d-none');
-                document.getElementById('insertSignatureBtn').classList.remove('d-none');
+                var img = new Image();
+                img.onload = function () {
+                    sigOriginalImage = img;
+                    document.getElementById('signatureCaptureArea').classList.add('d-none');
+                    document.getElementById('signaturePreviewArea').classList.remove('d-none');
+                    document.getElementById('insertSignatureBtn').classList.remove('d-none');
+                    var slider = document.getElementById('signatureThresholdSlider');
+                    processSignatureBackground(slider ? slider.value : 170);
+                };
+                img.src = e.target.result;
             };
             reader.readAsDataURL(file);
             event.target.value = '';
         }
 
+        // يشيل خلفية الورقة البيضاء/الفاتحة من الصورة تلقائياً ويبقي فقط أثر القلم (شكل التوقيع)
+        // بجعل البكسلات الفاتحة شفافة بالكامل، والبكسلات الداكنة (الحبر) معتمة بلونها الأصلي.
+        function processSignatureBackground(threshold) {
+            if (!sigOriginalImage) return;
+            threshold = parseInt(threshold, 10) || 170;
+
+            var canvas = document.getElementById('signatureProcessCanvas');
+            var maxDim = 900;
+            var w = sigOriginalImage.naturalWidth || sigOriginalImage.width;
+            var h = sigOriginalImage.naturalHeight || sigOriginalImage.height;
+            if (Math.max(w, h) > maxDim) {
+                var scale = maxDim / Math.max(w, h);
+                w = Math.round(w * scale);
+                h = Math.round(h * scale);
+            }
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(sigOriginalImage, 0, 0, w, h);
+
+            var imgData = ctx.getImageData(0, 0, w, h);
+            var d = imgData.data;
+            var softness = 35; // نطاق تدرّج ناعم حول الحد الفاصل لتفادي حواف مسننة
+
+            for (var i = 0; i < d.length; i += 4) {
+                var r = d[i], g = d[i + 1], b = d[i + 2];
+                var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                if (lum >= threshold) {
+                    d[i + 3] = 0; // خلفية فاتحة -> شفافة بالكامل
+                } else if (lum >= threshold - softness) {
+                    // تدرّج ناعم بين الحبر والخلفية لتفادي حواف خشنة
+                    var ratio = (threshold - lum) / softness;
+                    d[i + 3] = Math.round(255 * ratio);
+                } else {
+                    d[i + 3] = 255; // حبر داكن -> معتم بالكامل
+                }
+            }
+
+            ctx.putImageData(imgData, 0, 0);
+            sigCapturedDataUrl = canvas.toDataURL('image/png');
+            document.getElementById('signaturePreviewImg').src = sigCapturedDataUrl;
+        }
+
+        function onSignatureThresholdChange(value) {
+            processSignatureBackground(value);
+        }
+
         function openSignaturePad() {
+            sigOriginalImage = null;
             sigCapturedDataUrl = null;
             document.getElementById('signatureCaptureArea').classList.remove('d-none');
             document.getElementById('signaturePreviewArea').classList.add('d-none');
             document.getElementById('insertSignatureBtn').classList.add('d-none');
+            var slider = document.getElementById('signatureThresholdSlider');
+            if (slider) slider.value = 170;
             var modalEl = document.getElementById('signaturePadModal');
             var modal = new bootstrap.Modal(modalEl);
             modal.show();
