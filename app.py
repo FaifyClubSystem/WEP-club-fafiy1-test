@@ -1,7 +1,9 @@
 import os
+import secrets
 from datetime import datetime
 from flask import Flask, render_template_string, request, redirect, url_for, session, send_file, send_from_directory
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import psycopg2
 import psycopg2.extras
 from psycopg2 import IntegrityError
@@ -11,24 +13,31 @@ import uuid
 from supabase import create_client, Client
 
 app = Flask(__name__)
-app.secret_key = 'fifa_club_archiving_secret_key'
+# مفتاح الجلسة يُقرأ من متغير بيئة SECRET_KEY (يجب ضبطه في إعدادات الاستضافة/Render).
+# إذا لم يكن مضبوطًا، يتم توليد مفتاح عشوائي مؤقت في كل إقلاع - وهذا يعني إبطال كل الجلسات
+# المفتوحة عند إعادة تشغيل السيرفر، لذا يُفضّل بشدة ضبط SECRET_KEY كمتغير بيئة دائم.
+app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
 # --- إعدادات الاتصال بقاعدة بيانات Supabase PostgreSQL ---
-NEON_DATABASE_URL = os.environ.get(
-    'DATABASE_URL', 
-    'postgresql://postgres.wrwlnztmoctufkjjtpxr:Essa12121313$$$$@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres'
-)
+# يجب ضبط هذه القيم كمتغيرات بيئة في إعدادات الاستضافة (Render) - لا توجد قيم افتراضية
+# مكتوبة بالكود لتفادي تسريب بيانات الاتصال الحساسة عند مشاركة الكود المصدري.
+NEON_DATABASE_URL = os.environ.get('DATABASE_URL')
+if not NEON_DATABASE_URL:
+    raise RuntimeError("متغير البيئة DATABASE_URL غير مضبوط. الرجاء ضبطه في إعدادات الاستضافة قبل تشغيل التطبيق.")
 
 # --- إعدادات تخزين الملفات الحقيقية على Supabase Storage ---
-SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://wrwlnztmoctufkjjtpxr.supabase.co')
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+if not SUPABASE_URL:
+    raise RuntimeError("متغير البيئة SUPABASE_URL غير مضبوط. الرجاء ضبطه في إعدادات الاستضافة قبل تشغيل التطبيق.")
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')  # مفتاح service_role السري (وليس anon key)
+if not SUPABASE_SERVICE_KEY:
+    raise RuntimeError("متغير البيئة SUPABASE_SERVICE_KEY غير مضبوط. الرجاء ضبطه في إعدادات الاستضافة قبل تشغيل التطبيق.")
 SUPABASE_BUCKET = os.environ.get('SUPABASE_BUCKET', 'archive-files')
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
 import re
-
 def sanitize_folder_name(name):
     """
     يحوّل اسم/معرّف الإدارة إلى صيغة آمنة كاسم مجلد لـ Supabase Storage.
