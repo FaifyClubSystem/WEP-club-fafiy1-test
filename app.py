@@ -32,12 +32,13 @@ if not SUPABASE_URL:
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')  # مفتاح service_role السري (وليس anon key)
 if not SUPABASE_SERVICE_KEY:
     raise RuntimeError("متغير البيئة SUPABASE_SERVICE_KEY غير مضبوط. الرجاء ضبطه في إعدادات الاستضافة قبل تشغيل التطبيق.")
-SUPABASE_BUCKET = os.environ.get('SUPABASE_BUCKET', 'archive-files')
+SUPABASE_BUCKET = os.environ.get('SUPABASE_BUCKET', 'archive-files-test')
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
 import re
+
 def sanitize_folder_name(name):
     """
     يحوّل اسم/معرّف الإدارة إلى صيغة آمنة كاسم مجلد لـ Supabase Storage.
@@ -2773,30 +2774,34 @@ DASHBOARD_HTML = '''
       </div>
     </div>
 
-    <!-- ============ نافذة التوقيع الإلكتروني ============ -->
+    <!-- ============ نافذة التوقيع الإلكتروني (تصوير بالكاميرا) ============ -->
     <div class="modal fade" id="signaturePadModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header bg-dark text-white py-2">
-            <h6 class="modal-title fw-bold"><i class='bx bx-pen ms-1'></i> التوقيع الإلكتروني</h6>
+            <h6 class="modal-title fw-bold"><i class='bx bx-pen ms-1'></i> توقيع إلكتروني</h6>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <div class="modal-body">
-            <div class="mb-2">
-                <label class="form-label fw-bold fs-7">اسم الموقّع:</label>
-                <input type="text" id="signatureNameInput" class="form-control fs-7" placeholder="اسم الموقّع...">
+          <div class="modal-body text-center">
+            <input type="file" accept="image/*" capture="environment" id="signatureFileInput" style="display:none" onchange="handleSignatureFileSelected(event)">
+            <div id="signatureCaptureArea">
+                <p class="text-muted fs-7 mb-3">صوّر توقيعك بكاميرا الجوال أو اختر صورة له، وبعدها بتقدر تسحبه وتحطه بأي مكان في نموذج الخطاب.</p>
+                <button type="button" class="btn btn-fifa-primary fw-bold px-4" onclick="document.getElementById('signatureFileInput').click()">
+                    <i class='bx bx-camera fs-5 ms-1'></i> تصوير / اختيار صورة التوقيع
+                </button>
             </div>
-            <label class="form-label fw-bold fs-7 mb-1">ارسم توقيعك بالأسفل (بالماوس أو باللمس):</label>
-            <div style="border: 2px dashed #c5a059; border-radius: 8px; background: #fff; touch-action: none;">
-                <canvas id="signatureCanvas" width="460" height="180" style="width: 100%; height: 180px; cursor: crosshair; display: block;"></canvas>
-            </div>
-            <div class="text-end mt-2">
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearSignaturePad()"><i class='bx bx-eraser ms-1'></i> مسح</button>
+            <div id="signaturePreviewArea" class="d-none">
+                <div style="border: 1px solid #d5e2d8; border-radius: 8px; padding: 8px; background: #fff;">
+                    <img id="signaturePreviewImg" src="" style="max-width: 100%; max-height: 220px; object-fit: contain;">
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.getElementById('signatureFileInput').click()">
+                    <i class='bx bx-refresh ms-1'></i> إعادة الالتقاط
+                </button>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-            <button type="button" class="btn btn-primary fw-bold" onclick="applySignature()"><i class='bx bx-check ms-1'></i> اعتماد التوقيع وإدراجه في الخطاب</button>
+            <button type="button" id="insertSignatureBtn" class="btn btn-primary fw-bold d-none" onclick="applySignature()"><i class='bx bx-check ms-1'></i> إدراج التوقيع في الخطاب</button>
           </div>
         </div>
       </div>
@@ -2965,100 +2970,82 @@ DASHBOARD_HTML = '''
             syncTextareaWithPaper();
         }
 
-        // ==== التوقيع الإلكتروني ====
-        var sigCanvas, sigCtx, sigDrawing = false, sigHasStroke = false;
+        // ==== التوقيع الإلكتروني (تصوير بالكاميرا + سحب وتحريك على الورقة) ====
+        var sigCapturedDataUrl = null;
 
-        function initSignatureCanvas() {
-            sigCanvas = document.getElementById('signatureCanvas');
-            if (!sigCanvas || sigCanvas.dataset.initialized) return;
-            sigCanvas.dataset.initialized = '1';
-
-            var ratio = window.devicePixelRatio || 1;
-            var rect = sigCanvas.getBoundingClientRect();
-            sigCanvas.width = rect.width * ratio;
-            sigCanvas.height = rect.height * ratio;
-
-            sigCtx = sigCanvas.getContext('2d');
-            sigCtx.scale(ratio, ratio);
-            sigCtx.lineWidth = 2.2;
-            sigCtx.lineCap = 'round';
-            sigCtx.lineJoin = 'round';
-            sigCtx.strokeStyle = '#123826';
-
-            function getPos(e) {
-                var r = sigCanvas.getBoundingClientRect();
-                var clientX = (e.touches ? e.touches[0].clientX : e.clientX);
-                var clientY = (e.touches ? e.touches[0].clientY : e.clientY);
-                return { x: clientX - r.left, y: clientY - r.top };
-            }
-            function start(e) {
-                e.preventDefault();
-                sigDrawing = true;
-                sigHasStroke = true;
-                var p = getPos(e);
-                sigCtx.beginPath();
-                sigCtx.moveTo(p.x, p.y);
-            }
-            function move(e) {
-                if (!sigDrawing) return;
-                e.preventDefault();
-                var p = getPos(e);
-                sigCtx.lineTo(p.x, p.y);
-                sigCtx.stroke();
-            }
-            function end() { sigDrawing = false; }
-
-            sigCanvas.addEventListener('mousedown', start);
-            sigCanvas.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', end);
-            sigCanvas.addEventListener('touchstart', start, { passive: false });
-            sigCanvas.addEventListener('touchmove', move, { passive: false });
-            sigCanvas.addEventListener('touchend', end);
+        function handleSignatureFileSelected(event) {
+            var file = event.target.files && event.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                sigCapturedDataUrl = e.target.result;
+                document.getElementById('signaturePreviewImg').src = sigCapturedDataUrl;
+                document.getElementById('signatureCaptureArea').classList.add('d-none');
+                document.getElementById('signaturePreviewArea').classList.remove('d-none');
+                document.getElementById('insertSignatureBtn').classList.remove('d-none');
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
         }
 
         function openSignaturePad() {
-            var nameInput = document.getElementById('signatureNameInput');
-            if (nameInput && !nameInput.value) {
-                nameInput.value = document.querySelector('.dropdown .fw-bold.fs-7') ? document.querySelector('.dropdown .fw-bold.fs-7').innerText.trim() : '';
-            }
+            sigCapturedDataUrl = null;
+            document.getElementById('signatureCaptureArea').classList.remove('d-none');
+            document.getElementById('signaturePreviewArea').classList.add('d-none');
+            document.getElementById('insertSignatureBtn').classList.add('d-none');
             var modalEl = document.getElementById('signaturePadModal');
             var modal = new bootstrap.Modal(modalEl);
             modal.show();
-            setTimeout(function () {
-                initSignatureCanvas();
-                clearSignaturePad();
-            }, 150);
-        }
-
-        function clearSignaturePad() {
-            if (!sigCtx || !sigCanvas) return;
-            var ratio = window.devicePixelRatio || 1;
-            sigCtx.clearRect(0, 0, sigCanvas.width / ratio, sigCanvas.height / ratio);
-            sigHasStroke = false;
         }
 
         function applySignature() {
-            if (!sigHasStroke) {
-                alert('الرجاء رسم التوقيع أولاً قبل الاعتماد.');
+            if (!sigCapturedDataUrl) {
+                alert('الرجاء تصوير أو اختيار صورة التوقيع أولاً.');
                 return;
             }
-            var signerName = (document.getElementById('signatureNameInput').value || '').trim();
-            var dataUrl = sigCanvas.toDataURL('image/png');
-            var todayStr = new Date().toLocaleDateString('en-GB');
 
             var bodies = document.querySelectorAll('.word-paper-container .word-paper-body');
             var targetBody = bodies.length ? bodies[bodies.length - 1] : document.getElementById('paperBodyText');
             if (!targetBody) return;
 
-            var sigBlock = document.createElement('div');
-            sigBlock.className = 'letter-signature-block';
-            sigBlock.style.textAlign = 'left';
-            sigBlock.style.marginTop = '2rem';
-            sigBlock.innerHTML =
-                '<img src="' + dataUrl + '" style="max-height:70px; display:inline-block;"><br>' +
-                '<span style="font-size:0.95rem; font-weight:bold;">التوقيع الإلكتروني' + (signerName ? (' - ' + signerName) : '') + ' - ' + todayStr + '</span>';
+            if (getComputedStyle(targetBody).position === 'static') {
+                targetBody.style.position = 'relative';
+            }
 
-            targetBody.appendChild(sigBlock);
+            var wrapper = document.createElement('div');
+            wrapper.className = 'draggable-signature';
+            wrapper.setAttribute('contenteditable', 'false');
+            wrapper.style.position = 'absolute';
+            wrapper.style.top = '40px';
+            wrapper.style.right = '40px';
+            wrapper.style.width = '160px';
+            wrapper.style.cursor = 'grab';
+            wrapper.style.zIndex = '50';
+            wrapper.style.userSelect = 'none';
+
+            var img = document.createElement('img');
+            img.src = sigCapturedDataUrl;
+            img.style.width = '100%';
+            img.style.display = 'block';
+            img.style.pointerEvents = 'none';
+            wrapper.appendChild(img);
+
+            var removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.innerHTML = '&times;';
+            removeBtn.title = 'حذف التوقيع';
+            removeBtn.style.cssText = 'position:absolute; top:-10px; left:-10px; width:22px; height:22px; border-radius:50%; border:none; background:#dc3545; color:#fff; font-weight:bold; line-height:1; cursor:pointer; display:none;';
+            removeBtn.onclick = function (e) {
+                e.stopPropagation();
+                wrapper.remove();
+                syncTextareaWithPaper();
+            };
+            wrapper.appendChild(removeBtn);
+            wrapper.addEventListener('mouseenter', function () { removeBtn.style.display = 'block'; });
+            wrapper.addEventListener('mouseleave', function () { removeBtn.style.display = 'none'; });
+
+            makeSignatureDraggable(wrapper);
+            targetBody.appendChild(wrapper);
 
             var modalEl = document.getElementById('signaturePadModal');
             var modal = bootstrap.Modal.getInstance(modalEl);
@@ -3067,7 +3054,51 @@ DASHBOARD_HTML = '''
             syncTextareaWithPaper();
         }
 
-        // المزامنة بين نص كل صفحات الورقة ونموذج الإرسال بالأسفل (نجمع كل الصفحات مفصولة بعلامة خفية)
+        function makeSignatureDraggable(el) {
+            var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+            function getParentRect() { return el.offsetParent.getBoundingClientRect(); }
+
+            function pointerDown(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dragging = true;
+                el.style.cursor = 'grabbing';
+                var point = e.touches ? e.touches[0] : e;
+                startX = point.clientX;
+                startY = point.clientY;
+                var rect = el.getBoundingClientRect();
+                var parentRect = getParentRect();
+                startLeft = rect.left - parentRect.left;
+                startTop = rect.top - parentRect.top;
+                el.style.right = '';
+                el.style.left = startLeft + 'px';
+                el.style.top = startTop + 'px';
+            }
+            function pointerMove(e) {
+                if (!dragging) return;
+                e.preventDefault();
+                var point = e.touches ? e.touches[0] : e;
+                var dx = point.clientX - startX;
+                var dy = point.clientY - startY;
+                el.style.left = (startLeft + dx) + 'px';
+                el.style.top = (startTop + dy) + 'px';
+            }
+            function pointerUp() {
+                if (!dragging) return;
+                dragging = false;
+                el.style.cursor = 'grab';
+                syncTextareaWithPaper();
+            }
+
+            el.addEventListener('mousedown', pointerDown);
+            window.addEventListener('mousemove', pointerMove);
+            window.addEventListener('mouseup', pointerUp);
+            el.addEventListener('touchstart', pointerDown, { passive: false });
+            window.addEventListener('touchmove', pointerMove, { passive: false });
+            window.addEventListener('touchend', pointerUp);
+        }
+
         function syncTextareaWithPaper() {
             var container = document.querySelector('.word-paper-container');
             var textarea = document.getElementById('letterContentInput');
@@ -3098,6 +3129,7 @@ DASHBOARD_HTML = '''
             if (/<[a-z][\\s\\S]*>/i.test(firstPageVal)) {
                 // القيمة تحتوي وسوم HTML محفوظة مسبقاً (خطاب تم تحميله للتعديل)
                 paperBody.innerHTML = firstPageVal;
+                rebindDraggableSignatures(paperBody);
             } else {
                 paperBody.innerText = firstPageVal;
             }
@@ -3105,6 +3137,24 @@ DASHBOARD_HTML = '''
             for (var i = 1; i < pages.length; i++) {
                 addNewPage(pages[i]);
             }
+        }
+
+        // إعادة تفعيل خاصية السحب على أي توقيعات موجودة مسبقاً في خطاب تم تحميله للتعديل
+        function rebindDraggableSignatures(container) {
+            var sigs = container.querySelectorAll('.draggable-signature');
+            sigs.forEach(function (wrapper) {
+                var removeBtn = wrapper.querySelector('button');
+                if (removeBtn) {
+                    removeBtn.onclick = function (e) {
+                        e.stopPropagation();
+                        wrapper.remove();
+                        syncTextareaWithPaper();
+                    };
+                    wrapper.addEventListener('mouseenter', function () { removeBtn.style.display = 'block'; });
+                    wrapper.addEventListener('mouseleave', function () { removeBtn.style.display = 'none'; });
+                }
+                makeSignatureDraggable(wrapper);
+            });
         }
  
         function previewFile(url, title) {
