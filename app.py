@@ -11,7 +11,6 @@ import io
 import zipfile
 import uuid
 from supabase import create_client, Client
-from leave_attendance import init_leave_attendance
 
 
 app = Flask(__name__)
@@ -338,7 +337,6 @@ def init_db():
     conn.close()
 
 init_db()
-init_leave_attendance(app, get_db_connection, is_admin_user)
 
 # --- مسارات التحميل والمعاينة لكل ملفات النظام (تُقرأ الآن من Supabase Storage) ---
 
